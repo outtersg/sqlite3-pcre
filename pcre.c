@@ -40,7 +40,7 @@ void regexp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 
     str = (const char *) sqlite3_value_text(argv[1]);
     if (!str) {
-	sqlite3_result_error(ctx, "no string", -1);
+	sqlite3_result_null(ctx);
 	return;
     }
 
