@@ -71,7 +71,35 @@ void regexp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 	    cache_entry c;
 	    const char *err;
 	    int pos;
-	    c.p = pcre_compile(re, 0, &err, &pos, NULL);
+		const char *re2 = re;
+		char *re2mod = NULL;
+		int options = 0;
+		/* interpret "/.../i" regex as ... with flags */
+		if (re[0] == '/') {
+			for (re2 = &re[strlen(re)]; --re2 > re;) {
+				switch (*re2) {
+					case 'i': options |= PCRE_CASELESS; break;
+					case '/':
+						pos = re2 - re;
+						if (!(re2mod = strdup(re))) {
+							sqlite3_result_error(ctx, "strdup: ENOMEM", -1);
+							return;
+						}
+						re2mod[pos] = 0;
+						re2 = re2mod + 1;
+						goto breakfast;
+					default:
+						re2 = re;
+				}
+			}
+			/* if going here we did not find an ending /: restore everything */
+			options = 0;
+		}
+breakfast:
+	    c.p = pcre_compile(re2, options, &err, &pos, NULL);
+		if (re2mod) {
+			free(re2mod);
+		}
 	    if (!c.p) {
 		char *e2 = sqlite3_mprintf("%s: %s (offset %d)", re, err, pos);
 		sqlite3_result_error(ctx, e2, -1);
