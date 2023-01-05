@@ -9,8 +9,13 @@
 
 #if !defined(SQLITE_CORE) || defined(SQLITE_ENABLE_PCRE)
 
+#ifdef WITH_HYPERSCAN
+/* https://www.intel.com/content/www/us/en/developer/articles/training/why-and-how-to-replace-pcre-with-hyperscan.html */
+/* TODO implement pcre fallback for com̂plex expressions. */
+#else
 #ifndef WITH_PCRE
 #define WITH_PCRE
+#endif
 #endif
 #if defined(WITH_PCRE) && !defined(WITH_PCRE2) && !defined(WITH_PCRE1)
 #define WITH_PCRE1
@@ -26,6 +31,10 @@
 #ifdef WITH_PCRE1
 #include <pcre.h>
 #endif
+#ifdef WITH_HYPERSCAN
+#include <hs/hs_compile.h>
+#include <hs/hs_runtime.h>
+#endif
 #include <sqlite3ext.h>
 SQLITE_EXTENSION_INIT1
 
@@ -39,6 +48,10 @@ typedef struct {
     pcre *p;
     pcre_extra *e;
 #endif
+#ifdef WITH_HYPERSCAN
+    hs_database_t *hs;
+    hs_scratch_t *scratch;
+#endif
 } cache_entry;
 
 #ifndef CACHE_SIZE
@@ -51,6 +64,14 @@ typedef struct {
 #ifdef WITH_PCRE2
 #undef POS_T
 #define POS_T size_t
+#endif
+
+#ifdef WITH_HYPERSCAN
+int sqlite3_hs_callback(unsigned int id, unsigned long long from, unsigned long long to, unsigned int flags, void *context)
+{
+    ++*((int *)context);
+    return 1;
+}
 #endif
 
 static
@@ -104,6 +125,10 @@ void regexp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 #ifdef WITH_PCRE1
 	    const char *err;
 #endif
+#ifdef WITH_HYPERSCAN
+	    hs_error_t errcode;
+	    hs_compile_error_t *err;
+#endif
 	    POS_T pos;
 		const char *re2 = re;
 		char *re2mod = NULL;
@@ -118,6 +143,9 @@ void regexp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 #endif
 #ifdef WITH_PCRE1
 						options |= PCRE_CASELESS;
+#endif
+#ifdef WITH_HYPERSCAN
+						options |= HS_FLAG_CASELESS;
 #endif
 						break;
 					case '/':
@@ -143,6 +171,9 @@ breakfast:
 #ifdef WITH_PCRE1
 	    c.p = pcre_compile(re2, options, &err, &pos, NULL);
 #endif
+#ifdef WITH_HYPERSCAN
+	    errcode = hs_compile(re2, options, HS_MODE_BLOCK, NULL, &c.hs, &err);
+#endif
 		if (re2mod) {
 			free(re2mod);
 		}
@@ -152,6 +183,10 @@ breakfast:
 		pcre2_get_error_message(errcode, (unsigned char *)err, ERR_MAX_LENGTH);
 #endif
 		char *e2 = sqlite3_mprintf("%s: %s (offset %d)", re, err, pos);
+#endif
+#ifdef WITH_HYPERSCAN
+	    if (errcode) {
+		char *e2 = sqlite3_mprintf("%s: %s", re, err->message);
 #endif
 		sqlite3_result_error(ctx, e2, -1);
 		sqlite3_free(e2);
@@ -168,6 +203,9 @@ breakfast:
 #ifdef WITH_PCRE1
 	    c.e = pcre_study(c.p, 0, &err);
 #endif
+#ifdef WITH_HYPERSCAN
+	    hs_alloc_scratch(c.hs, &c.scratch);
+#endif
 	    c.s = strdup(re);
 	    if (!c.s) {
 		sqlite3_result_error(ctx, "strdup: ENOMEM", -1);
@@ -178,6 +216,9 @@ breakfast:
 #ifdef WITH_PCRE1
 		pcre_free(c.p);
 		pcre_free(c.e);
+#endif
+#ifdef WITH_HYPERSCAN
+		hs_free_database(cache[i].hs);
 #endif
 		return;
 	    }
@@ -192,6 +233,9 @@ breakfast:
 		assert(cache[i].p);
 		pcre_free(cache[i].p);
 		pcre_free(cache[i].e);
+#endif
+#ifdef WITH_HYPERSCAN
+		hs_free_database(cache[i].hs);
 #endif
 	    }
 	    memmove(cache + 1, cache, i * sizeof(cache_entry));
@@ -210,6 +254,11 @@ breakfast:
 	assert(cache);
 	rc = pcre_exec(cache->p, cache->e, str, strlen(str), 0, 0, NULL, 0);
 	sqlite3_result_int(ctx, rc >= 0);
+#endif
+#ifdef WITH_HYPERSCAN
+	int results = 0;
+	rc = hs_scan(cache->hs, str, strlen(str), 0, cache->scratch, sqlite3_hs_callback, &results);
+	sqlite3_result_int(ctx, rc == HS_SCAN_TERMINATED && results > 0);
 #endif
 	return;
     }
