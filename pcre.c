@@ -30,8 +30,7 @@ static
 void regexp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 {
     const char *re, *str;
-    pcre *p;
-    pcre_extra *e;
+    cache_entry *cache;
 
     assert(argc == 2);
 
@@ -51,7 +50,7 @@ void regexp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
     {
 	int i;
 	int found = 0;
-	cache_entry *cache = sqlite3_user_data(ctx);
+	cache = sqlite3_user_data(ctx);
 
 	assert(cache);
 
@@ -124,14 +123,12 @@ breakfast:
 	    memmove(cache + 1, cache, i * sizeof(cache_entry));
 	    cache[0] = c;
 	}
-	p = cache[0].p;
-	e = cache[0].e;
     }
 
     {
 	int rc;
-	assert(p);
-	rc = pcre_exec(p, e, str, strlen(str), 0, 0, NULL, 0);
+	assert(cache);
+	rc = pcre_exec(cache->p, cache->e, str, strlen(str), 0, 0, NULL, 0);
 	sqlite3_result_int(ctx, rc >= 0);
 	return;
     }
