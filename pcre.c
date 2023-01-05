@@ -68,6 +68,7 @@ void regexp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 	}
 	else {
 	    cache_entry c;
+	    bzero(&c, sizeof(c));
 	    const char *err;
 	    int pos;
 		const char *re2 = re;
