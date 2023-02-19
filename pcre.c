@@ -167,6 +167,7 @@ void regexp(sqlite3_context *ctx, int argc, sqlite3_value **argv)
 breakfast:
 #ifdef WITH_PCRE2
 	    c.p = pcre2_compile((const unsigned char *)re2, strlen(re2), options, &errcode, &pos, NULL);
+	    pcre2_jit_compile(c.p, PCRE2_JIT_COMPLETE|PCRE2_JIT_PARTIAL_HARD|PCRE2_JIT_PARTIAL_SOFT);
 #endif
 #ifdef WITH_PCRE1
 	    c.p = pcre_compile(re2, options, &err, &pos, NULL);
@@ -247,6 +248,10 @@ breakfast:
 	int rc;
 #ifdef WITH_PCRE2
 	assert(cache);
+	/* No need to use pcre2_jit_match, it seems that pcre2_match benefits from pcre2_jit_compile
+	 * (even if call options are set to 0, as long as _jit_compile had the right options).
+	 * Else we could use pcre2_jit_match conditionnally (like glib which tests which options are JIT-compatible else fallbacks to pcre2_match())
+	 */
 	rc = pcre2_match(cache->p, (const unsigned char *)str, strlen(str), 0, 0, cache->matches, NULL);
 	sqlite3_result_int(ctx, rc >= 0);
 #endif
